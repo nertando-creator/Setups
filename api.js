@@ -18,12 +18,22 @@ export async function addFactor(name) {
   fail(error); return data
 }
 export async function listSetups() {
-  const { data, error } = await supabase
-    .from('setups')
-    .select('*, setup_factors(factor_id), screenshots(id,path_full,sort_order), observations(result)')
-    .order('created_at', { ascending: false })
+  const { data, error } = await supabase.from('setups').select('id,name,folder_id,created_at').order('created_at', { ascending: false })
   fail(error); return data
 }
+export async function listFolders() {
+  const { data, error } = await supabase.from('folders').select('*').order('created_at')
+  fail(error); return data
+}
+export async function createFolder(name) { fail((await supabase.from('folders').insert({ name })).error) }
+export async function renameFolder(id, name) { fail((await supabase.from('folders').update({ name }).eq('id', id)).error) }
+export async function deleteFolder(id) { fail((await supabase.from('folders').delete().eq('id', id)).error) }
+export async function createSetupNamed(name, folder_id) {
+  const { data, error } = await supabase.from('setups').insert({ name, folder_id }).select().single()
+  fail(error); return data
+}
+export async function addSetupShot(id, img) { await saveShot(img, 'setup_id', id, 'Формация', 0) }
+
 export async function signedUrls(paths) {
   if (!paths.length) return {}
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, 3600)

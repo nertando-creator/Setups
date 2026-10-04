@@ -115,26 +115,6 @@ function Pills({ opts, value, onChange, cls = {} }) {
   )
 }
 
-function Card({ s, factors, urls, onOpen }) {
-  const t = [...(s.screenshots || [])].sort((a, b) => a.sort_order - b.sort_order)[0]
-  const { wr, n } = stats(s)
-  return (
-    <div className="card" onClick={onOpen}>
-      {t && urls[t.path_full] ? <Cropped src={urls[t.path_full]} crop={s.metrics?.crop} /> : <div className="noimg">нет скрина</div>}
-      <div className="foot">
-        <div className="caps small">
-          {s.setup_factors.map((x) => <span key={x.factor_id} className="cap">{factors.find((f) => f.id === x.factor_id)?.name}</span>)}
-        </div>
-        <div className="cstats">
-          <span>Rate <b style={{ color: ratingColor(s.rating) }}>{s.rating ?? '–'}/10</b></span>
-          <span className="wr">Winrate {wr === null ? '–' : wr + '%'}</span>
-          <span>History {n}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function FactorPicker({ factors, sel, onToggle, onAdd }) {
   const [v, setV] = useState('')
   const add = async () => { const n = v.trim(); if (n) { await onAdd(n); setV('') } }
@@ -161,40 +141,6 @@ function FactorBar({ factors, sel, onToggle, onAdd }) {
           <input placeholder="Добавить новый…" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
         </div>
       )}
-    </div>
-  )
-}
-
-function CreateModal({ factors, setFactors, onClose, onSaved }) {
-  const [img, setImg] = useState(null)
-  const [dup, setDup] = useState(null)
-  const [comment, setComment] = useState('')
-  const [sel, setSel] = useState([])
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const pick = useCallback(async (file) => {
-    if (!file) return
-    const p = await processImage(file)
-    setImg(p); setDup(await api.findDuplicate(p.hash))
-  }, [])
-  usePaste(pick)
-  const toggle = (id) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
-  const onAdd = async (n) => { const f = await api.addFactor(n); setFactors((x) => [...x, f]); setSel((s) => [...s, f.id]) }
-  const save = async () => {
-    if (!img) return setErr('Добавь скрин')
-    setBusy(true)
-    try { await api.createSetup({ comment, factorIds: sel, img }); onSaved() } catch (e) { setErr(e.message); setBusy(false) }
-  }
-  return (
-    <div className="overlay" onClick={onClose}>
-      <div className="modal narrow" onClick={(e) => e.stopPropagation()}>
-        <Slot img={img} onFile={pick} hint="Ctrl+V · перетащить · нажать для выбора файла" />
-        {dup && <p className="warn">Такой же скрин уже есть{dup.setups?.name ? ` в сетапе «${dup.setups.name}»` : ''}.</p>}
-        <FactorPicker factors={factors} sel={sel} onToggle={toggle} onAdd={onAdd} />
-        <textarea placeholder="Комментарий" value={comment} onChange={(e) => setComment(e.target.value)} />
-        {err && <p className="err">{err}</p>}
-        <div className="row"><button onClick={onClose}>Отмена</button><button className="primary" disabled={busy} onClick={save}>{busy ? 'Сохраняю…' : 'Создать'}</button></div>
-      </div>
     </div>
   )
 }
@@ -325,7 +271,101 @@ function ObsView({ o, urls, onClose }) {
   )
 }
 
-function Detail({ id, factors, setFactors, onClose }) {
+function InlineInput({ initial = '', placeholder, onSubmit, onCancel }) {
+  const [v, setV] = useState(initial)
+  return (
+    <input autoFocus className="inline" value={v} placeholder={placeholder} onChange={(e) => setV(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter' && v.trim()) onSubmit(v.trim()); if (e.key === 'Escape') onCancel() }} onBlur={onCancel} />
+  )
+}
+
+function Sidebar({ folders, setups, selId, onSelect, refresh }) {
+  const [col, setCol] = useState({})
+  const [edit, setEdit] = useState(null)
+  const [menu, setMenu] = useState(null)
+  const [moving, setMoving] = useState(false)
+  const close = () => { setMenu(null); setMoving(false) }
+  const run = async (fn) => { try { await fn() } catch (x) { alert(x.message) } }
+  const submit = async (name) => {
+    const e = edit; setEdit(null)
+    await run(async () => {
+      if (e.kind === 'new-setup') { const s = await api.createSetupNamed(name, e.folder || null); await refresh(s.id) }
+      else if (e.kind === 'new-folder') { await api.createFolder(name); await refresh() }
+      else if (e.kind === 'ren-setup') { await api.updateSetup(e.id, { name }); await refresh() }
+      else if (e.kind === 'ren-folder') { await api.renameFolder(e.id, name); await refresh() }
+    })
+  }
+  const act = (fn) => { close(); run(async () => { await fn(); await refresh() }) }
+  const box = (items) => (
+    <>
+      <div className="backdrop" onClick={(e) => { e.stopPropagation(); close() }} />
+      <div className="menu" onClick={(e) => e.stopPropagation()}>{items}</div>
+    </>
+  )
+  const input = (initial, placeholder) => <div className="trow"><InlineInput initial={initial} placeholder={placeholder} onSubmit={submit} onCancel={() => setEdit(null)} /></div>
+
+  const setupRow = (s) => {
+    if (edit?.kind === 'ren-setup' && edit.id === s.id) return <div key={s.id}>{input(s.name, 'Название')}</div>
+    return (
+      <div key={s.id} className={'trow item' + (s.id === selId ? ' sel' : '')} onClick={() => onSelect(s.id)}>
+        <span className="tname">{s.name || 'Без названия'}</span>
+        <button className="dots" onClick={(e) => { e.stopPropagation(); setMenu({ k: 's', id: s.id }) }}>⋯</button>
+        {menu?.k === 's' && menu.id === s.id && box(
+          <>
+            <div className="opt" onClick={() => { setEdit({ kind: 'ren-setup', id: s.id }); close() }}>Переименовать</div>
+            <div className="opt" onClick={() => setMoving((m) => !m)}>Переместить {moving ? '▾' : '▸'}</div>
+            {moving && <>
+              {folders.map((f) => <div key={f.id} className="opt sub" onClick={() => act(() => api.updateSetup(s.id, { folder_id: f.id }))}>{f.name}</div>)}
+              <div className="opt sub" onClick={() => act(() => api.updateSetup(s.id, { folder_id: null }))}>Без папки</div>
+            </>}
+            <div className="opt danger" onClick={() => { if (confirm(`Удалить сетап «${s.name || 'Без названия'}» и всю его историю?`)) act(() => api.deleteSetup(s.id)) }}>Удалить</div>
+          </>
+        )}
+      </div>
+    )
+  }
+  const folderRow = (f) => {
+    const kids = setups.filter((s) => s.folder_id === f.id)
+    return (
+      <div key={f.id}>
+        {edit?.kind === 'ren-folder' && edit.id === f.id ? input(f.name, 'Название папки') : (
+          <div className="trow folder" onClick={() => setCol((c) => ({ ...c, [f.id]: !c[f.id] }))}>
+            <span className="chev">{col[f.id] ? '▸' : '▾'}</span><span className="tname">{f.name}</span>
+            <button className="dots" onClick={(e) => { e.stopPropagation(); setMenu({ k: 'f', id: f.id }) }}>⋯</button>
+            {menu?.k === 'f' && menu.id === f.id && box(
+              <>
+                <div className="opt" onClick={() => { setEdit({ kind: 'ren-folder', id: f.id }); close() }}>Переименовать</div>
+                <div className="opt danger" onClick={() => { if (confirm('Удалить папку? Сетапы из неё останутся в списке без папки.')) act(() => api.deleteFolder(f.id)) }}>Удалить</div>
+              </>
+            )}
+          </div>
+        )}
+        {!col[f.id] && (
+          <div className="children">
+            <div className="trow plus" onClick={() => setEdit({ kind: 'new-setup', folder: f.id })}>+ Создать</div>
+            {edit?.kind === 'new-setup' && edit.folder === f.id && input('', 'Название сетапа')}
+            {kids.map(setupRow)}
+          </div>
+        )}
+      </div>
+    )
+  }
+  return (
+    <div className="side">
+      <div className="sidehead"><b>Сетапы</b><button className="link" onClick={() => supabase.auth.signOut()}>Выйти</button></div>
+      <div className="tree">
+        <div className="trow plus" onClick={() => setEdit({ kind: 'new-setup', folder: null })}>+ Создать</div>
+        {edit?.kind === 'new-setup' && !edit.folder && input('', 'Название сетапа')}
+        <div className="trow plus" onClick={() => setEdit({ kind: 'new-folder' })}>+ Папка</div>
+        {edit?.kind === 'new-folder' && input('', 'Название папки')}
+        {folders.map(folderRow)}
+        {setups.filter((s) => !s.folder_id).map(setupRow)}
+      </div>
+    </div>
+  )
+}
+
+function Workspace({ id, factors, setFactors, onDeleted }) {
   const [s, setS] = useState(null)
   const [urls, setUrls] = useState({})
   const [adding, setAdding] = useState(false)
@@ -341,36 +381,42 @@ function Detail({ id, factors, setFactors, onClose }) {
     } catch (e) { setErr(e.message) }
   }, [id])
   useEffect(() => { load() }, [load])
-  if (!s) return <div className="overlay" onClick={() => onClose(false)}><div className="modal narrow">{err || 'Загрузка…'}</div></div>
+  const blocked = useRef(true)
+  blocked.current = !s || s.screenshots.length > 0 || adding || !!view
+  const addShot = useCallback(async (file) => {
+    if (!file || blocked.current) return
+    await api.addSetupShot(id, await processImage(file)); load()
+  }, [id, load])
+  usePaste(addShot)
+  if (!s) return <p className="muted">{err || 'Загрузка…'}</p>
   const sel = s.setup_factors.map((x) => x.factor_id)
   const { wr, n } = stats(s)
-  const shot = s.screenshots[0]
+  const shot = [...s.screenshots].sort((a, b) => a.sort_order - b.sort_order)[0]
   const toggle = async (fid) => { await api.toggleFactor(id, fid, !sel.includes(fid)); load() }
   const onAdd = async (nm) => { const f = await api.addFactor(nm); setFactors((x) => [...x, f]); await api.toggleFactor(id, f.id, true); load() }
-  const del = async () => { if (confirm('Уверен, что хочешь удалить сетап и всю его историю?')) { await api.deleteSetup(id); onClose(true) } }
+  const del = async () => { if (confirm('Уверен, что хочешь удалить сетап и всю его историю?')) { await api.deleteSetup(id); onDeleted() } }
   const applyCrop = async (c) => { const m = { ...(s.metrics || {}) }; if (c) m.crop = c; else delete m.crop; await api.updateSetup(id, { metrics: m }); setCrop(false); load() }
   return (
-    <div className="overlay" onClick={() => onClose(true)}>
-      <div className="modal big" onClick={(e) => e.stopPropagation()}>
-        <div className="top">
-          <div className="left imgwrap">
-            {shot && urls[shot.path_full] && <Cropped src={urls[shot.path_full]} crop={s.metrics?.crop} />}
-            <button className="ico tl" title="Удалить сетап" onClick={del}>🗑</button>
-            <button className="ico tr" title="Обрезать" onClick={() => setCrop(true)}>✂</button>
-          </div>
-          <div className="right">
-            <div className="box"><FactorBar factors={factors} sel={sel} onToggle={toggle} onAdd={onAdd} /></div>
-            <div className="box stats">
-              <label>Rate <select value={s.rating ?? ''} style={{ color: ratingColor(s.rating) }} onChange={async (e) => { await api.updateSetup(id, { rating: e.target.value === '' ? null : +e.target.value }); load() }}>
-                <option value="">–</option>{[...Array(10)].map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}</select> /10</label>
-              <span className="wr">Winrate {wr === null ? '–' : wr + '%'}</span><span>History {n}</span>
-            </div>
-            <div className="box grow"><textarea placeholder="Комментарий: как устроена гипотеза" defaultValue={s.comment || ''} onBlur={(e) => api.updateSetup(id, { comment: e.target.value })} /></div>
-          </div>
+    <div className="ws">
+      <div className="wtop">
+        <div className="imgwrap">
+          {shot ? (urls[shot.path_full] && <Cropped src={urls[shot.path_full]} crop={s.metrics?.crop} />)
+            : <Slot img={null} onFile={addShot} hint="Ctrl+V · перетащить · нажать для выбора скрина" />}
+          <button className="ico tl" title="Удалить сетап" onClick={del}>🗑</button>
+          {shot && <button className="ico tr" title="Обрезать" onClick={() => setCrop(true)}>✂</button>}
         </div>
-        <div className="histhead"><h3>История</h3><button className="gray" onClick={() => setAdding(true)}>+ Добавить</button></div>
-        <History obs={s.observations} urls={urls} onOpen={setView} />
+        <div className="desc">
+          <div className="box"><FactorBar factors={factors} sel={sel} onToggle={toggle} onAdd={onAdd} /></div>
+          <div className="box stats">
+            <label>Rate <select value={s.rating ?? ''} style={{ color: ratingColor(s.rating) }} onChange={async (e) => { await api.updateSetup(id, { rating: e.target.value === '' ? null : +e.target.value }); load() }}>
+              <option value="">–</option>{[...Array(10)].map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}</select> /10</label>
+            <span className="wr">Winrate {wr === null ? '–' : wr + '%'}</span><span>History {n}</span>
+          </div>
+          <div className="box grow"><textarea placeholder="Комментарий: как устроена гипотеза" defaultValue={s.comment || ''} onBlur={(e) => api.updateSetup(id, { comment: e.target.value })} /></div>
+        </div>
       </div>
+      <div className="histhead"><h3>История</h3><button className="gray" onClick={() => setAdding(true)}>+ Добавить</button></div>
+      <History obs={s.observations} urls={urls} onOpen={setView} />
       {adding && <ObsForm setupId={id} onCancel={() => setAdding(false)} onDone={() => { setAdding(false); load() }} />}
       {view && <ObsView o={view} urls={urls} onClose={() => setView(null)} />}
       {crop && shot && <CropEditor src={urls[shot.path_full]} onClose={() => setCrop(false)} onApply={applyCrop} />}
@@ -380,30 +426,28 @@ function Detail({ id, factors, setFactors, onClose }) {
 
 function Main() {
   const [setups, setSetups] = useState([])
+  const [folders, setFolders] = useState([])
   const [factors, setFactors] = useState([])
-  const [urls, setUrls] = useState({})
-  const [open, setOpen] = useState(false)
-  const [openId, setOpenId] = useState(null)
+  const [sel, setSel] = useState(localStorage.getItem('lastSetup'))
   const [err, setErr] = useState('')
-  const load = useCallback(async () => {
+  const select = useCallback((id) => { setSel(id); if (id) localStorage.setItem('lastSetup', id) }, [])
+  const refresh = useCallback(async (selectId) => {
     try {
-      const [f, s] = await Promise.all([api.listFactors(), api.listSetups()])
-      setFactors(f); setSetups(s)
-      setUrls(await api.signedUrls(s.flatMap((x) => x.screenshots.map((y) => y.path_full))))
+      const [f, s, fo] = await Promise.all([api.listFactors(), api.listSetups(), api.listFolders()])
+      setFactors(f); setSetups(s); setFolders(fo); setErr('')
+      if (selectId) select(selectId)
+      else setSel((cur) => (cur && !s.some((x) => x.id === cur) ? null : cur))
     } catch (e) { setErr(e.message) }
-  }, [])
-  useEffect(() => { load() }, [load])
+  }, [select])
+  useEffect(() => { refresh() }, [refresh])
   return (
-    <div className="app">
-      <header>
-        <h2>Сетапы</h2>
-        <div><button className="primary sq" onClick={() => setOpen(true)}>+</button><button onClick={() => supabase.auth.signOut()}>Выйти</button></div>
-      </header>
-      {err && <p className="err">{err}</p>}
-      <div className="grid">{setups.map((s) => <Card key={s.id} s={s} factors={factors} urls={urls} onOpen={() => setOpenId(s.id)} />)}</div>
-      {!setups.length && !err && <p className="muted">Пока пусто. Нажми «+», чтобы добавить первую формацию.</p>}
-      {open && <CreateModal factors={factors} setFactors={setFactors} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); load() }} />}
-      {openId && <Detail id={openId} factors={factors} setFactors={setFactors} onClose={(r) => { setOpenId(null); if (r) load() }} />}
+    <div className="shell">
+      <Sidebar folders={folders} setups={setups} selId={sel} onSelect={select} refresh={refresh} />
+      <div className="work">
+        {err && <p className="err">{err}</p>}
+        {sel ? <Workspace key={sel} id={sel} factors={factors} setFactors={setFactors} onDeleted={() => { setSel(null); refresh() }} />
+          : <p className="muted">Выбери сетап слева или создай новый.</p>}
+      </div>
     </div>
   )
 }

@@ -62,3 +62,25 @@ th { color:var(--muted); font-weight:500; cursor:pointer; user-select:none; } td
 .sel { position:absolute; border:1px solid #8fb3ea; box-shadow:0 0 0 9999px rgba(0,0,0,.6); pointer-events:none; }
 .login { max-width:320px; margin:15vh auto; display:flex; flex-direction:column; gap:10px; }
 .err { color:var(--r); } .warn { color:var(--o); margin:0; } .muted { color:var(--muted); }
+
+/* ---- v3: проводник слева + рабочая область ---- */
+.shell { display:flex; height:100vh; }
+.side { width:30%; min-width:260px; max-width:440px; border-right:1px solid var(--line); display:flex; flex-direction:column; background:#0b0b0c; }
+.sidehead { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); }
+button.link { background:none; border:0; color:var(--muted); padding:0; font-size:12px; }
+.tree { overflow:auto; flex:1; padding:6px 0; }
+.trow { position:relative; display:flex; align-items:center; gap:6px; padding:6px 14px; cursor:pointer; font-size:13px; min-height:30px; }
+.trow:hover { background:#161718; } .trow.sel { background:#202123; } .trow.plus { color:var(--muted); } .trow.folder { font-weight:600; }
+.children { padding-left:14px; } .chev { color:var(--muted); font-size:10px; width:10px; }
+.tname { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dots { opacity:0; background:none; border:0; padding:0 4px; color:var(--muted); } .trow:hover .dots { opacity:1; }
+input.inline { width:100%; padding:3px 8px; font-size:13px; border-radius:6px; }
+.backdrop { position:fixed; inset:0; z-index:40; }
+.menu { position:absolute; right:6px; top:100%; z-index:41; min-width:170px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.5); font-weight:400; }
+.opt.sub { padding-left:20px; color:#a5a7ab; } .opt.danger { color:var(--r); }
+.work { flex:1; min-width:0; overflow:auto; padding:16px 20px; }
+.ws { display:flex; flex-direction:column; gap:14px; }
+.wtop { display:flex; gap:14px; align-items:flex-start; } .wtop .imgwrap { flex:1; min-width:0; } .desc { width:340px; flex-shrink:0; display:flex; flex-direction:column; gap:10px; }
+.desc .box.grow { min-height:220px; }
+.ws table { font-size:12px; } .ws th, .ws td { padding:6px 5px; } .ws th { white-space:normal; line-height:1.15; vertical-align:bottom; }
+.ws td.cm { min-width:220px; max-width:340px; white-space:normal; }
