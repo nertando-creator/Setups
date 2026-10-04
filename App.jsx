@@ -97,7 +97,7 @@ function CropEditor({ src, initial, onApply, onClose }) {
         <div className="cropedit" ref={box} onPointerMove={move} onPointerUp={() => (drag.current = null)}>
           <img src={src} draggable={false} onLoad={(e) => { const a = e.target.naturalWidth / e.target.naturalHeight; setAr(a); setR(initial ? { x: initial.x, y: initial.y, w: initial.w, h: initial.h } : defRect(a)) }} />
           {r && (
-            <div className="sel" style={{ left: r.x * 100 + '%', top: r.y * 100 + '%', width: r.w * 100 + '%', height: r.h * 100 + '%' }} onPointerDown={(e) => start(e, 'move')}>
+            <div className="cropsel" style={{ left: r.x * 100 + '%', top: r.y * 100 + '%', width: r.w * 100 + '%', height: r.h * 100 + '%' }} onPointerDown={(e) => start(e, 'move')}>
               {['nw', 'ne', 'sw', 'se'].map((c) => <i key={c} className={'hd ' + c} onPointerDown={(e) => { e.stopPropagation(); start(e, c) }} />)}
             </div>
           )}
@@ -163,13 +163,13 @@ function FactorBar({ factors, sel, onToggle, onAdd }) {
     <div className="fbar">
       <div className="caps">
         {sel.map((id) => <span key={id} className="cap">{factors.find((f) => f.id === id)?.name}</span>)}
-        <button className="plus" onClick={() => setOpen((o) => !o)}>+</button>
+        <button className="fplus" onClick={() => setOpen((o) => !o)}>+</button>
       </div>
       {open && (
-        <div className="pop">
+        <><div className="backdrop" onClick={() => setOpen(false)} /><div className="pop">
           {factors.map((f) => <div key={f.id} className={'opt' + (sel.includes(f.id) ? ' on' : '')} onClick={() => onToggle(f.id)}>{sel.includes(f.id) ? '✓ ' : ''}{f.name}</div>)}
           <input placeholder="Добавить новый…" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
-        </div>
+        </div></>
       )}
     </div>
   )
@@ -318,7 +318,7 @@ function InlineInput({ initial = '', placeholder, onSubmit, onCancel }) {
   )
 }
 
-function Sidebar({ folders, setups, selId, onSelect, refresh, width }) {
+function Sidebar({ folders, setups, selId, onSelect, refresh, width, onGrab }) {
   const [col, setCol] = useState({})
   const [edit, setEdit] = useState(null)
   const [menu, setMenu] = useState(null)
@@ -344,13 +344,13 @@ function Sidebar({ folders, setups, selId, onSelect, refresh, width }) {
   const plusRow = (folder) => (
     <>
       {edit?.kind === 'new-setup' && (edit.folder || null) === folder && input('', 'Название сетапа')}
-      <div className="trow plus" onClick={() => setEdit({ kind: 'new-setup', folder })}>+ Создать</div>
+      <div className="trow addrow" onClick={() => setEdit({ kind: 'new-setup', folder })}>+ Создать</div>
     </>
   )
   const setupRow = (s) => {
     if (edit?.kind === 'ren-setup' && edit.id === s.id) return <div key={s.id}>{input(s.name, 'Название')}</div>
     return (
-      <div key={s.id} className={'trow item' + (s.id === selId ? ' sel' : '')} onClick={() => onSelect(s.id)}>
+      <div key={s.id} className={'trow item' + (s.id === selId ? ' active' : '')} onClick={() => onSelect(s.id)}>
         <span className="tname">{s.name || 'Без названия'}</span>
         <button className="dots" onClick={(e) => { e.stopPropagation(); setMenu({ k: 's', id: s.id }) }}>⋯</button>
         {menu?.k === 's' && menu.id === s.id && box(
@@ -387,8 +387,23 @@ function Sidebar({ folders, setups, selId, onSelect, refresh, width }) {
         {setups.filter((x) => !x.folder_id).map(setupRow)}
         {plusRow(null)}
         {edit?.kind === 'new-folder' && input('', 'Название папки')}
-        <div className="trow plus root" onClick={() => setEdit({ kind: 'new-folder' })}>+ Папка</div>
+        <div className="trow addrow root" onClick={() => setEdit({ kind: 'new-folder' })}>+ Папка</div>
       </div>
+      <div className="resizer" onPointerDown={onGrab} />
+    </div>
+  )
+}
+
+function Lightbox({ src, onClose }) {
+  const [full, setFull] = useState(false)
+  useEffect(() => {
+    const k = (e) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [onClose])
+  return (
+    <div className="lightbox" onClick={onClose}>
+      <img src={src} className={full ? 'full100' : 'fitall'} onClick={(e) => { e.stopPropagation(); setFull((f) => !f) }} />
     </div>
   )
 }
@@ -399,6 +414,7 @@ function Workspace({ id, factors, setFactors, onDeleted }) {
   const [adding, setAdding] = useState(false)
   const [view, setView] = useState(null)
   const [crop, setCrop] = useState(false)
+  const [big, setBig] = useState(false)
   const [err, setErr] = useState('')
   const load = useCallback(async () => {
     try {
@@ -428,7 +444,7 @@ function Workspace({ id, factors, setFactors, onDeleted }) {
     <div className="ws">
       <div className="wtop">
         <div className="imgwrap">
-          {shot ? (urls[shot.path_full] && <Cropped src={urls[shot.path_full]} crop={s.metrics?.crop} />)
+          {shot ? (urls[shot.path_full] && <div className="fillclick" onClick={() => setBig(true)}><Cropped src={urls[shot.path_full]} crop={s.metrics?.crop} /></div>)
             : <Slot img={null} onFile={addShot} hint="Ctrl+V · перетащить · нажать для выбора скрина" />}
           <button className="ico tl" title="Удалить сетап" onClick={del}>🗑</button>
           {shot && <button className="ico tr" title="Обрезать" onClick={() => setCrop(true)}>✂</button>}
@@ -446,6 +462,7 @@ function Workspace({ id, factors, setFactors, onDeleted }) {
       <div className="histhead"><h3>История</h3><button className="gray" onClick={() => setAdding(true)}>+ Добавить</button></div>
       <History obs={s.observations} urls={urls} onOpen={setView} />
       {adding && <ObsForm setupId={id} onCancel={() => setAdding(false)} onDone={() => { setAdding(false); load() }} />}
+      {big && shot && <Lightbox src={urls[shot.path_full]} onClose={() => setBig(false)} />}
       {view && <ObsView o={view} urls={urls} onClose={() => setView(null)} />}
       {crop && shot && <CropEditor src={urls[shot.path_full]} initial={s.metrics?.crop} onClose={() => setCrop(false)} onApply={applyCrop} />}
     </div>
@@ -462,8 +479,8 @@ function Main() {
   const swRef = useRef(sw); swRef.current = sw
   const drag = useRef(false)
   useEffect(() => {
-    const mv = (e) => { if (drag.current) setSw(Math.min(0.45, Math.max(0.2, e.clientX / window.innerWidth))) }
     const up = () => { if (drag.current) { drag.current = false; document.body.style.userSelect = ''; localStorage.setItem('sideW', swRef.current) } }
+    const mv = (e) => { if (drag.current && e.buttons === 0) { up(); return } if (drag.current) setSw(Math.min(0.45, Math.max(0.2, e.clientX / window.innerWidth))) }
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up)
     return () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }
   }, [])
@@ -479,8 +496,7 @@ function Main() {
   useEffect(() => { refresh() }, [refresh])
   return (
     <div className="shell">
-      <Sidebar width={sw * 100 + '%'} folders={folders} setups={setups} selId={sel} onSelect={select} refresh={refresh} />
-      <div className="resizer" onPointerDown={() => { drag.current = true; document.body.style.userSelect = 'none' }} />
+      <Sidebar onGrab={(e) => { e.preventDefault(); drag.current = true; document.body.style.userSelect = 'none' }} width={Math.min(0.45, Math.max(0.2, sw)) * 100 + '%'} folders={folders} setups={setups} selId={sel} onSelect={select} refresh={refresh} />
       <div className="work">
         {err && <p className="err">{err}</p>}
         {sel ? <Workspace key={sel} id={sel} factors={factors} setFactors={setFactors} onDeleted={() => { setSel(null); refresh() }} />

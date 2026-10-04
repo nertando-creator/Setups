@@ -14,5 +14,5 @@ export async function processImage(file) {
   const h = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
   const hash = [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('')
   const bmp = await createImageBitmap(file)
-  return { hash, full: await resize(bmp, 2400, 0.92), thumb: await resize(bmp, 1200, 0.9), preview: URL.createObjectURL(file) }
+  return { hash, full: await resize(bmp, 3000, 0.95), thumb: await resize(bmp, 1200, 0.9), preview: URL.createObjectURL(file) }
 }
