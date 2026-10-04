@@ -380,7 +380,7 @@ function Sidebar({ folders, setups, selId, onSelect, refresh, width, onGrab }) {
     </div>
   )
   return (
-    <div className="side" style={{ width }}>
+    <div className="sidebar" style={{ width }}>
       <div className="sidehead"><b>Сетапы</b><button className="link" onClick={() => supabase.auth.signOut()}>Выйти</button></div>
       <div className="tree">
         {folders.map(folderRow)}
