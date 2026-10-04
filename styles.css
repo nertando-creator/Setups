@@ -84,3 +84,25 @@ input.inline { width:100%; padding:3px 8px; font-size:13px; border-radius:6px; }
 .desc .box.grow { min-height:220px; }
 .ws table { font-size:12px; } .ws th, .ws td { padding:6px 5px; } .ws th { white-space:normal; line-height:1.15; vertical-align:bottom; }
 .ws td.cm { min-width:220px; max-width:340px; white-space:normal; }
+
+/* ---- v3.4 ---- */
+.side { min-width:0; max-width:none; flex-shrink:0; }
+.resizer { width:5px; flex-shrink:0; cursor:col-resize; margin-left:-3px; z-index:3; } .resizer:hover { background:#25406b; }
+.trow.plus { padding-left:30px; color:#6f7378; white-space:nowrap; } .trow.plus:hover { color:#b2b5ba; } .trow.plus.root { padding-left:14px; }
+.fit { container-type:size; width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+.fitimg { max-width:100%; max-height:100%; object-fit:contain; display:block; }
+.cropbox { position:relative; overflow:hidden; width:auto; }
+.wtop { align-items:stretch; height:min(64vh, 700px); min-height:380px; }
+.wtop .imgwrap { align-self:stretch; height:100%; background:#0b0b0c; border-radius:8px; overflow:hidden; }
+.wtop .imgwrap .drop { height:100%; min-height:0; border-radius:8px; }
+.wtop .desc { height:100%; } .desc .box.grow { flex:1; min-height:0; }
+.ws th, .ws td { border-left:1px solid var(--line); border-right:1px solid var(--line); }
+.cropedit { position:relative; display:inline-block; align-self:center; line-height:0; max-width:100%; }
+.cropedit img { max-width:100%; max-height:66vh; width:auto; display:block; }
+.sel { cursor:move; pointer-events:auto; }
+.hd { position:absolute; width:12px; height:12px; background:#8fb3ea; border-radius:2px; }
+.hd.nw { left:-6px; top:-6px; cursor:nwse-resize; } .hd.ne { right:-6px; top:-6px; cursor:nesw-resize; }
+.hd.sw { left:-6px; bottom:-6px; cursor:nesw-resize; } .hd.se { right:-6px; bottom:-6px; cursor:nwse-resize; }
+.fgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.fgrid label { display:flex; flex-direction:column; gap:4px; } .fgrid b { font-size:12px; }
+.fgrid input, .fgrid select { width:100%; }

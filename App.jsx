@@ -40,44 +40,74 @@ function Login() {
   )
 }
 
-// Картинка с нон-деструктивной обрезкой (рамка хранится в setups.metrics.crop, оригинал не меняется)
-function Cropped({ src, crop, onClick }) {
-  if (!crop) return <img className="cimg" src={src} onClick={onClick} />
+// Картинка вписывается в фиксированную область; обрезка нон-деструктивная (crop в setups.metrics)
+function Cropped({ src, crop }) {
+  if (!crop) return <div className="fit"><img className="fitimg" src={src} /></div>
+  const A = (crop.w * crop.ar) / crop.h
   return (
-    <div className="cropbox" style={{ aspectRatio: (crop.w * crop.ar) / crop.h }} onClick={onClick}>
-      <img src={src} style={{ position: 'absolute', width: 100 / crop.w + '%', left: (-crop.x / crop.w) * 100 + '%', top: (-crop.y / crop.h) * 100 + '%' }} />
+    <div className="fit">
+      <div className="cropbox" style={{ aspectRatio: A, width: `min(100cqw, ${A * 100}cqh)` }}>
+        <img src={src} style={{ position: 'absolute', width: 100 / crop.w + '%', left: (-crop.x / crop.w) * 100 + '%', top: (-crop.y / crop.h) * 100 + '%' }} />
+      </div>
     </div>
   )
 }
 
-function CropEditor({ src, onApply, onClose }) {
+const CROP_ASPECT = 1.6
+function CropEditor({ src, initial, onApply, onClose }) {
   const [r, setR] = useState(null)
   const [ar, setAr] = useState(1)
+  const [free, setFree] = useState(false)
   const box = useRef(null)
-  const st = useRef(null)
+  const drag = useRef(null)
+  const A = CROP_ASPECT
+  const defRect = (a) => {
+    let w = 1, h = a / A
+    if (h > 1) { h = 1; w = A / a }
+    return { x: (1 - w) / 2, y: (1 - h) / 2, w, h }
+  }
   const pos = (e) => {
     const b = box.current.getBoundingClientRect()
     return { x: Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)), y: Math.min(1, Math.max(0, (e.clientY - b.top) / b.height)) }
   }
-  const down = (e) => { e.preventDefault(); st.current = pos(e); setR({ ...st.current, w: 0, h: 0 }); box.current.setPointerCapture(e.pointerId) }
+  const start = (e, mode) => { e.preventDefault(); drag.current = { mode, p0: pos(e), r0: r }; box.current.setPointerCapture(e.pointerId) }
   const move = (e) => {
-    if (!st.current) return
-    const p = pos(e), s = st.current
-    setR({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) })
+    const d = drag.current
+    if (!d) return
+    const p = pos(e), r0 = d.r0
+    if (d.mode === 'move') {
+      setR({ ...r0, x: Math.min(1 - r0.w, Math.max(0, r0.x + p.x - d.p0.x)), y: Math.min(1 - r0.h, Math.max(0, r0.y + p.y - d.p0.y)) })
+      return
+    }
+    const sx = d.mode.includes('w') ? -1 : 1, sy = d.mode.includes('n') ? -1 : 1
+    const o = { x: sx < 0 ? r0.x + r0.w : r0.x, y: sy < 0 ? r0.y + r0.h : r0.y }
+    const maxW = sx > 0 ? 1 - o.x : o.x, maxH = sy > 0 ? 1 - o.y : o.y
+    let w = Math.min(maxW, Math.max(0.05, (p.x - o.x) * sx)), h = Math.min(maxH, Math.max(0.05, (p.y - o.y) * sy))
+    if (!free) {
+      const hw = (w * ar) / A
+      if (hw <= maxH) h = hw
+      else { h = maxH; w = (h * A) / ar }
+    }
+    setR({ x: sx > 0 ? o.x : o.x - w, y: sy > 0 ? o.y : o.y - h, w, h })
   }
-  const ok = r && r.w > 0.03 && r.h > 0.03
   return (
     <div className="overlay top3" onClick={onClose}>
       <div className="modal cropmodal" onClick={(e) => e.stopPropagation()}>
-        <p className="muted">Выдели область мышью, затем «Применить». Оригинал сохраняется, обрезку можно сбросить.</p>
-        <div className="cropedit" ref={box} onPointerDown={down} onPointerMove={move} onPointerUp={() => (st.current = null)}>
-          <img src={src} draggable={false} onLoad={(e) => setAr(e.target.naturalWidth / e.target.naturalHeight)} />
-          {r && <div className="sel" style={{ left: r.x * 100 + '%', top: r.y * 100 + '%', width: r.w * 100 + '%', height: r.h * 100 + '%' }} />}
+        <p className="muted">Двигай рамку и тяни за уголки. Оригинал сохраняется, обрезку можно сбросить.</p>
+        <div className="cropedit" ref={box} onPointerMove={move} onPointerUp={() => (drag.current = null)}>
+          <img src={src} draggable={false} onLoad={(e) => { const a = e.target.naturalWidth / e.target.naturalHeight; setAr(a); setR(initial ? { x: initial.x, y: initial.y, w: initial.w, h: initial.h } : defRect(a)) }} />
+          {r && (
+            <div className="sel" style={{ left: r.x * 100 + '%', top: r.y * 100 + '%', width: r.w * 100 + '%', height: r.h * 100 + '%' }} onPointerDown={(e) => start(e, 'move')}>
+              {['nw', 'ne', 'sw', 'se'].map((c) => <i key={c} className={'hd ' + c} onPointerDown={(e) => { e.stopPropagation(); start(e, c) }} />)}
+            </div>
+          )}
         </div>
         <div className="row">
+          <label className="muted"><input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} /> Свободная пропорция</label>
+          <button onClick={() => setR(defRect(ar))}>Рамка по умолчанию</button>
           <button onClick={() => onApply(null)}>Вернуть оригинал</button>
           <button onClick={onClose}>Отмена</button>
-          <button className="primary" disabled={!ok} onClick={() => onApply({ ...r, ar })}>Применить</button>
+          <button className="primary" disabled={!r} onClick={() => onApply({ ...r, ar })}>Готово</button>
         </div>
       </div>
     </div>
@@ -183,13 +213,22 @@ function ObsForm({ setupId, onDone, onCancel }) {
           </div>
         </div>
         {dup && <p className="warn">Такой же скрин уже есть{dup.setups?.name ? ` в сетапе «${dup.setups.name}»` : ''}.</p>}
-        <div className="frow"><input placeholder="Монета" value={f.coin} onChange={(e) => set('coin', e.target.value)} />
-          <Pills opts={[['long', 'Long'], ['short', 'Short']]} value={f.direction} onChange={(v) => set('direction', v)} cls={{ long: 'g', short: 'r' }} /></div>
-        <div className="frow"><span className="lbl">ТФ</span><Pills opts={TFS.map((t) => [t, t])} value={f.timeframe} onChange={(v) => set('timeframe', v)} /></div>
-        <div className="frow"><span className="lbl">Результат</span><Pills opts={Object.entries(RES)} value={f.result} onChange={(v) => set('result', v)} cls={RES_CLS} />
-          <span className="lbl">Фаза</span><Pills opts={Object.entries(PH)} value={f.phase} onChange={(v) => set('phase', v)} /></div>
-        <div className="frow"><span className="lbl">День</span><Pills opts={DAYS.map((d, i) => [i, d])} value={f.day} onChange={(v) => set('day', v === '' ? f.day : v)} />
-          <input type="time" value={f.time} onChange={(e) => set('time', e.target.value)} /></div>
+        <div className="fgrid">
+          <label><b>Монета</b><input placeholder="BTC" value={f.coin} onChange={(e) => set('coin', e.target.value)} /></label>
+          <label><b>Направление</b>
+            <select style={{ color: f.direction === 'long' ? GREEN : f.direction === 'short' ? RED : undefined }} value={f.direction} onChange={(e) => set('direction', e.target.value)}>
+              <option value="">–</option><option value="long">Long</option><option value="short">Short</option></select></label>
+          <label><b>ТФ</b>
+            <select value={f.timeframe} onChange={(e) => set('timeframe', e.target.value)}><option value="">–</option>{TFS.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
+          <label><b>Результат</b>
+            <select style={{ color: f.result === 'success' ? GREEN : f.result === 'fail' ? RED : f.result === 'unclear' ? '#c98a3d' : undefined }} value={f.result} onChange={(e) => set('result', e.target.value)}>
+              <option value="">–</option>{Object.entries(RES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          <label><b>Фаза</b>
+            <select value={f.phase} onChange={(e) => set('phase', e.target.value)}><option value="">–</option>{Object.entries(PH).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          <label><b>День</b>
+            <select value={f.day} onChange={(e) => set('day', +e.target.value)}>{DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}</select></label>
+          <label><b>Время</b><input type="time" value={f.time} onChange={(e) => set('time', e.target.value)} /></label>
+        </div>
         <div className="fields">{METRICS.map(([k, t]) => <input key={k} placeholder={t} value={f.m[k] || ''} onChange={(e) => set('m', { ...f.m, [k]: e.target.value })} />)}</div>
         <textarea placeholder="Комментарий / отклонения от оригинала" value={f.comment} onChange={(e) => set('comment', e.target.value)} />
         {err && <p className="err">{err}</p>}
@@ -279,12 +318,11 @@ function InlineInput({ initial = '', placeholder, onSubmit, onCancel }) {
   )
 }
 
-function Sidebar({ folders, setups, selId, onSelect, refresh }) {
+function Sidebar({ folders, setups, selId, onSelect, refresh, width }) {
   const [col, setCol] = useState({})
   const [edit, setEdit] = useState(null)
   const [menu, setMenu] = useState(null)
-  const [moving, setMoving] = useState(false)
-  const close = () => { setMenu(null); setMoving(false) }
+  const close = () => setMenu(null)
   const run = async (fn) => { try { await fn() } catch (x) { alert(x.message) } }
   const submit = async (name) => {
     const e = edit; setEdit(null)
@@ -303,7 +341,12 @@ function Sidebar({ folders, setups, selId, onSelect, refresh }) {
     </>
   )
   const input = (initial, placeholder) => <div className="trow"><InlineInput initial={initial} placeholder={placeholder} onSubmit={submit} onCancel={() => setEdit(null)} /></div>
-
+  const plusRow = (folder) => (
+    <>
+      {edit?.kind === 'new-setup' && (edit.folder || null) === folder && input('', 'Название сетапа')}
+      <div className="trow plus" onClick={() => setEdit({ kind: 'new-setup', folder })}>+ Создать</div>
+    </>
+  )
   const setupRow = (s) => {
     if (edit?.kind === 'ren-setup' && edit.id === s.id) return <div key={s.id}>{input(s.name, 'Название')}</div>
     return (
@@ -312,54 +355,39 @@ function Sidebar({ folders, setups, selId, onSelect, refresh }) {
         <button className="dots" onClick={(e) => { e.stopPropagation(); setMenu({ k: 's', id: s.id }) }}>⋯</button>
         {menu?.k === 's' && menu.id === s.id && box(
           <>
-            <div className="opt" onClick={() => { setEdit({ kind: 'ren-setup', id: s.id }); close() }}>Переименовать</div>
-            <div className="opt" onClick={() => setMoving((m) => !m)}>Переместить {moving ? '▾' : '▸'}</div>
-            {moving && <>
-              {folders.map((f) => <div key={f.id} className="opt sub" onClick={() => act(() => api.updateSetup(s.id, { folder_id: f.id }))}>{f.name}</div>)}
-              <div className="opt sub" onClick={() => act(() => api.updateSetup(s.id, { folder_id: null }))}>Без папки</div>
-            </>}
+            <div className="opt" onClick={() => { setEdit({ kind: 'ren-setup', id: s.id }); close() }}>Изменить</div>
             <div className="opt danger" onClick={() => { if (confirm(`Удалить сетап «${s.name || 'Без названия'}» и всю его историю?`)) act(() => api.deleteSetup(s.id)) }}>Удалить</div>
           </>
         )}
       </div>
     )
   }
-  const folderRow = (f) => {
-    const kids = setups.filter((s) => s.folder_id === f.id)
-    return (
-      <div key={f.id}>
-        {edit?.kind === 'ren-folder' && edit.id === f.id ? input(f.name, 'Название папки') : (
-          <div className="trow folder" onClick={() => setCol((c) => ({ ...c, [f.id]: !c[f.id] }))}>
-            <span className="chev">{col[f.id] ? '▸' : '▾'}</span><span className="tname">{f.name}</span>
-            <button className="dots" onClick={(e) => { e.stopPropagation(); setMenu({ k: 'f', id: f.id }) }}>⋯</button>
-            {menu?.k === 'f' && menu.id === f.id && box(
-              <>
-                <div className="opt" onClick={() => { setEdit({ kind: 'ren-folder', id: f.id }); close() }}>Переименовать</div>
-                <div className="opt danger" onClick={() => { if (confirm('Удалить папку? Сетапы из неё останутся в списке без папки.')) act(() => api.deleteFolder(f.id)) }}>Удалить</div>
-              </>
-            )}
-          </div>
-        )}
-        {!col[f.id] && (
-          <div className="children">
-            <div className="trow plus" onClick={() => setEdit({ kind: 'new-setup', folder: f.id })}>+ Создать</div>
-            {edit?.kind === 'new-setup' && edit.folder === f.id && input('', 'Название сетапа')}
-            {kids.map(setupRow)}
-          </div>
-        )}
-      </div>
-    )
-  }
+  const folderRow = (f) => (
+    <div key={f.id}>
+      {edit?.kind === 'ren-folder' && edit.id === f.id ? input(f.name, 'Название папки') : (
+        <div className="trow folder" onClick={() => setCol((c) => ({ ...c, [f.id]: !c[f.id] }))}>
+          <span className="chev">{col[f.id] ? '▸' : '▾'}</span><span className="tname">{f.name}</span>
+          <button className="dots" onClick={(e) => { e.stopPropagation(); setMenu({ k: 'f', id: f.id }) }}>⋯</button>
+          {menu?.k === 'f' && menu.id === f.id && box(
+            <>
+              <div className="opt" onClick={() => { setEdit({ kind: 'ren-folder', id: f.id }); close() }}>Изменить</div>
+              <div className="opt danger" onClick={() => { if (confirm('Удалить папку? Сетапы из неё останутся в списке без папки.')) act(() => api.deleteFolder(f.id)) }}>Удалить</div>
+            </>
+          )}
+        </div>
+      )}
+      {!col[f.id] && <div className="children">{setups.filter((x) => x.folder_id === f.id).map(setupRow)}{plusRow(f.id)}</div>}
+    </div>
+  )
   return (
-    <div className="side">
+    <div className="side" style={{ width }}>
       <div className="sidehead"><b>Сетапы</b><button className="link" onClick={() => supabase.auth.signOut()}>Выйти</button></div>
       <div className="tree">
-        <div className="trow plus" onClick={() => setEdit({ kind: 'new-setup', folder: null })}>+ Создать</div>
-        {edit?.kind === 'new-setup' && !edit.folder && input('', 'Название сетапа')}
-        <div className="trow plus" onClick={() => setEdit({ kind: 'new-folder' })}>+ Папка</div>
-        {edit?.kind === 'new-folder' && input('', 'Название папки')}
         {folders.map(folderRow)}
-        {setups.filter((s) => !s.folder_id).map(setupRow)}
+        {setups.filter((x) => !x.folder_id).map(setupRow)}
+        {plusRow(null)}
+        {edit?.kind === 'new-folder' && input('', 'Название папки')}
+        <div className="trow plus root" onClick={() => setEdit({ kind: 'new-folder' })}>+ Папка</div>
       </div>
     </div>
   )
@@ -419,7 +447,7 @@ function Workspace({ id, factors, setFactors, onDeleted }) {
       <History obs={s.observations} urls={urls} onOpen={setView} />
       {adding && <ObsForm setupId={id} onCancel={() => setAdding(false)} onDone={() => { setAdding(false); load() }} />}
       {view && <ObsView o={view} urls={urls} onClose={() => setView(null)} />}
-      {crop && shot && <CropEditor src={urls[shot.path_full]} onClose={() => setCrop(false)} onApply={applyCrop} />}
+      {crop && shot && <CropEditor src={urls[shot.path_full]} initial={s.metrics?.crop} onClose={() => setCrop(false)} onApply={applyCrop} />}
     </div>
   )
 }
@@ -430,6 +458,15 @@ function Main() {
   const [factors, setFactors] = useState([])
   const [sel, setSel] = useState(localStorage.getItem('lastSetup'))
   const [err, setErr] = useState('')
+  const [sw, setSw] = useState(() => +localStorage.getItem('sideW') || 0.3)
+  const swRef = useRef(sw); swRef.current = sw
+  const drag = useRef(false)
+  useEffect(() => {
+    const mv = (e) => { if (drag.current) setSw(Math.min(0.45, Math.max(0.2, e.clientX / window.innerWidth))) }
+    const up = () => { if (drag.current) { drag.current = false; document.body.style.userSelect = ''; localStorage.setItem('sideW', swRef.current) } }
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up)
+    return () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }
+  }, [])
   const select = useCallback((id) => { setSel(id); if (id) localStorage.setItem('lastSetup', id) }, [])
   const refresh = useCallback(async (selectId) => {
     try {
@@ -442,7 +479,8 @@ function Main() {
   useEffect(() => { refresh() }, [refresh])
   return (
     <div className="shell">
-      <Sidebar folders={folders} setups={setups} selId={sel} onSelect={select} refresh={refresh} />
+      <Sidebar width={sw * 100 + '%'} folders={folders} setups={setups} selId={sel} onSelect={select} refresh={refresh} />
+      <div className="resizer" onPointerDown={() => { drag.current = true; document.body.style.userSelect = 'none' }} />
       <div className="work">
         {err && <p className="err">{err}</p>}
         {sel ? <Workspace key={sel} id={sel} factors={factors} setFactors={setFactors} onDeleted={() => { setSel(null); refresh() }} />
