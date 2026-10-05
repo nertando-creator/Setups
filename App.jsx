@@ -105,7 +105,7 @@ function Gallery({ shots, factors, urls, onOpen }) {
     <div className="gallery">
       {shots.map((s) => (
         <div key={s.id} className="gcell" onClick={() => onOpen(s.id)}>
-          <div className="gthumb">{urls[s.path_thumb] && <img loading="lazy" decoding="async" src={urls[s.path_thumb]} />}</div>
+          <div className="gthumb">{urls[s.path_thumb] && <img loading="lazy" decoding="async" src={urls[s.path_thumb]} style={{ objectPosition: `${s.focus_x ?? 50}% ${s.focus_y ?? 50}%` }} />}</div>
           <div className="gmeta">
             <div className={'gtitle' + (s.title ? '' : ' none')}>{s.title || 'Без названия'}</div>
             <div className="gcaps">{s.shot_factors.map((f) => <span key={f.factor_id} className="gcap">{nameOf(f.factor_id)}</span>)}</div>
@@ -116,33 +116,84 @@ function Gallery({ shots, factors, urls, onOpen }) {
   )
 }
 
+/* ---------- Панель факторов (в окнах): выбранные + список по стрелке ---------- */
+function FactorBar({ factors, sel, onToggle, onAdd }) {
+  const [open, setOpen] = useState(false)
+  const [v, setV] = useState('')
+  const add = async () => { const n = v.trim(); if (n) { await onAdd(n); setV('') } }
+  const nameOf = (id) => factors.find((f) => f.id === id)?.name
+  return (
+    <div className="fbar2">
+      {open && <div className="scrim" onClick={() => setOpen(false)} />}
+      <div className="fsel">
+        {sel.length ? sel.map((id) => <span key={id} className="gcap">{nameOf(id)}<b onClick={() => onToggle(id)}>×</b></span>) : <span className="muted">Факторы не выбраны</span>}
+      </div>
+      <button className="tog" title="Выбрать факторы" onClick={() => setOpen((o) => !o)}>{open ? '▴' : '▾'}</button>
+      {open && (
+        <div className="fdrop">
+          {factors.map((f) => (
+            <div key={f.id} className={'fopt' + (sel.includes(f.id) ? ' on' : '')} onClick={() => onToggle(f.id)}><span>{sel.includes(f.id) ? '✓' : ''}</span>{f.name}</div>
+          ))}
+          <input placeholder="Добавить новый…" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ---------- Окно просмотра ---------- */
 function ViewDialog({ shot, factors, thumbUrl, onClose, onPatch, onToggle, onDelete, onAddFactor }) {
-  const [full, setFull] = useState(null)
+  const viewPath = shot.path_view || shot.path_full
+  const [src, setSrc] = useState(null)
+  const [fullUrl, setFullUrl] = useState(null)
   const [zoom, setZoom] = useState(false)
-  useEffect(() => { api.signedUrls([shot.path_full]).then((u) => setFull(u[shot.path_full])) }, [shot.path_full])
+  const [moving, setMoving] = useState(false)
+  const [pos, setPos] = useState({ x: shot.focus_x ?? 50, y: shot.focus_y ?? 50 })
+  const box = useRef(null)
+  const nat = useRef(null)
+  const drag = useRef(null)
+  useEffect(() => {
+    api.signedUrls([...new Set([viewPath, shot.path_full])]).then((u) => { setSrc(u[viewPath]); setFullUrl(u[shot.path_full]) })
+  }, [viewPath, shot.path_full])
+  const focus = moving ? pos : { x: shot.focus_x ?? 50, y: shot.focus_y ?? 50 }
   const sel = shot.shot_factors.map((f) => f.factor_id)
-  const date = new Date(shot.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const down = (e) => { if (!moving) return; drag.current = { x0: e.clientX, y0: e.clientY, x: pos.x, y: pos.y }; box.current.setPointerCapture(e.pointerId) }
+  const move = (e) => {
+    const d = drag.current
+    if (!d || !nat.current) return
+    const el = box.current, cw = el.clientWidth, ch = el.clientHeight, { w, h } = nat.current
+    const k = Math.max(cw / w, ch / h), ox = w * k - cw, oy = h * k - ch
+    const cl = (v) => Math.min(100, Math.max(0, v))
+    setPos({ x: ox > 1 ? cl(d.x - ((e.clientX - d.x0) / ox) * 100) : d.x, y: oy > 1 ? cl(d.y - ((e.clientY - d.y0) / oy) * 100) : d.y })
+  }
+  const stop = (e) => e.stopPropagation()
+  const apply = () => { onPatch(shot.id, { focus_x: Math.round(pos.x * 10) / 10, focus_y: Math.round(pos.y * 10) / 10 }); setMoving(false) }
   return (
     <div className="overlay" onClick={onClose}>
       <div className="dlg view" onClick={(e) => e.stopPropagation()}>
-        <div className="vleft">
-          <img src={full || thumbUrl} onClick={() => full && setZoom(true)} style={{ cursor: full ? 'zoom-in' : 'default' }} />
-        </div>
-        <div className="vright">
-          <input className="vtitle" placeholder="Название" defaultValue={shot.title} key={'t' + shot.id}
-            onBlur={(e) => e.target.value !== shot.title && onPatch(shot.id, { title: e.target.value })} />
-          <FactorChips factors={factors} sel={sel} onToggle={(fid) => onToggle(shot.id, fid)}
-            onAdd={async (n) => { const f = await onAddFactor(n); onToggle(shot.id, f.id, true) }} />
-          <textarea className="vcomment" placeholder="Комментарий" defaultValue={shot.comment} key={'c' + shot.id}
-            onBlur={(e) => e.target.value !== shot.comment && onPatch(shot.id, { comment: e.target.value })} />
-          <div className="vfoot">
-            <span className="muted">{date}</span>
-            <button className="btn danger" title="Удалить" onClick={() => confirm('Уверен, что хочешь удалить этот скрин?') && onDelete(shot.id)}>🗑 Удалить</button>
+        <FactorBar factors={factors} sel={sel} onToggle={(fid) => onToggle(shot.id, fid)} onAdd={async (n) => { const f = await onAddFactor(n); onToggle(shot.id, f.id, true) }} />
+        <div className="vbody">
+          <div className={'vleft' + (moving ? ' moving' : '')} ref={box} onPointerDown={down} onPointerMove={move} onPointerUp={() => (drag.current = null)}>
+            <img className="vimg" draggable={false} src={src || thumbUrl} style={{ objectPosition: `${focus.x}% ${focus.y}%`, cursor: moving ? 'grab' : fullUrl ? 'zoom-in' : 'default' }}
+              onLoad={(e) => (nat.current = { w: e.target.naturalWidth, h: e.target.naturalHeight })}
+              onClick={() => !moving && fullUrl && setZoom(true)} />
+            <button className="ico tl del" title="Удалить" onPointerDown={stop} onClick={() => confirm('Уверен, что хочешь удалить этот скрин?') && onDelete(shot.id)}>🗑</button>
+            {moving ? (
+              <div className="movebar" onPointerDown={stop}>
+                <button className="ico inl" title="Готово" onClick={apply}>✓</button>
+                <button className="ico inl" title="Отмена" onClick={() => setMoving(false)}>✕</button>
+              </div>
+            ) : (
+              <button className="ico tr" title="Сдвинуть кадр" onPointerDown={stop} onClick={() => { setPos({ x: shot.focus_x ?? 50, y: shot.focus_y ?? 50 }); setMoving(true) }}>✂</button>
+            )}
+          </div>
+          <div className="vright">
+            <input placeholder="Название" defaultValue={shot.title} key={'t' + shot.id} onBlur={(e) => e.target.value !== shot.title && onPatch(shot.id, { title: e.target.value })} />
+            <textarea className="vcomment" placeholder="Комментарий" defaultValue={shot.comment} key={'c' + shot.id} onBlur={(e) => e.target.value !== shot.comment && onPatch(shot.id, { comment: e.target.value })} />
           </div>
         </div>
       </div>
-      {zoom && full && <Lightbox src={full} onClose={() => setZoom(false)} />}
+      {zoom && fullUrl && <Lightbox src={fullUrl} onClose={() => setZoom(false)} />}
     </div>
   )
 }
@@ -163,16 +214,20 @@ function AddDialog({ initFile, factors, onAddFactor, onClose, onCreated, onOpenE
     const p = await processImage(file)
     setImg(p); setTitle(p.name)
     const d = await api.findDuplicate(p.hash)
-    setDup(d)
+    setDup(d); setDupUrl(null)
     if (d) api.signedUrls([d.path_thumb]).then((u) => setDupUrl(u[d.path_thumb]))
   }, [])
   useEffect(() => { if (initFile) pick(initFile) }, [initFile, pick])
   usePaste(pick)
-  const toggle = (id) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
-  const addF = async (n) => { const f = await onAddFactor(n); setSel((s) => (s.includes(f.id) ? s : [...s, f.id])) }
+  const toggle = (id) => setSel((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]))
+  const addF = async (n) => { const f = await onAddFactor(n); setSel((x) => (x.includes(f.id) ? x : [...x, f.id])) }
   const save = async () => {
     setBusy(true)
     try { onCreated(await api.createShot({ title: title.trim(), comment, factorIds: sel, img })) } catch (e) { setErr(e.message); setBusy(false) }
+  }
+  const dz = {
+    onDragOver: (e) => { e.preventDefault(); setOver(true) }, onDragLeave: () => setOver(false),
+    onDrop: (e) => { e.preventDefault(); setOver(false); pick(e.dataTransfer.files[0]) },
   }
   return (
     <div className="overlay" onClick={onClose}>
@@ -184,23 +239,28 @@ function AddDialog({ initFile, factors, onAddFactor, onClose, onCreated, onOpenE
             <button className="btn" onClick={() => onOpenExisting(dup.id)}>Открыть</button>
           </div>
         )}
-        <div className="addbody">
-          <label className={'dropzone' + (over ? ' over' : '') + (img ? ' has' : '')}
-            onDragOver={(e) => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)}
-            onDrop={(e) => { e.preventDefault(); setOver(false); pick(e.dataTransfer.files[0]) }}>
-            {img ? <img src={img.preview} /> : <span>Ctrl+V · перетащить файл · нажать, чтобы выбрать</span>}
-            <input type="file" accept="image/*" hidden onChange={(e) => pick(e.target.files[0])} />
-          </label>
+        {img && <FactorBar factors={factors} sel={sel} onToggle={toggle} onAdd={addF} />}
+        <div className="abody">
+          {img ? (
+            <label className={'apreview' + (over ? ' over' : '')} title="Нажми, чтобы заменить" {...dz}>
+              <img src={img.preview} />
+              <input type="file" accept="image/*" hidden onChange={(e) => pick(e.target.files[0])} />
+            </label>
+          ) : (
+            <label className={'dropzone' + (over ? ' over' : '')} {...dz}>
+              <span>Ctrl+V · перетащить файл · нажать, чтобы выбрать</span>
+              <input type="file" accept="image/*" hidden onChange={(e) => pick(e.target.files[0])} />
+            </label>
+          )}
           {img && (
-            <div className="addside">
+            <div className="aside">
               <input placeholder="Название" value={title} onChange={(e) => setTitle(e.target.value)} />
-              <FactorChips factors={factors} sel={sel} onToggle={toggle} onAdd={addF} />
               <textarea placeholder="Комментарий" value={comment} onChange={(e) => setComment(e.target.value)} />
             </div>
           )}
         </div>
-        {err && <p className="err">{err}</p>}
-        <div className="row">
+        {err && <p className="err pad">{err}</p>}
+        <div className="row foot">
           <button className="btn" onClick={onClose}>Отмена</button>
           {img && <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Сохраняю…' : 'Сохранить'}</button>}
         </div>

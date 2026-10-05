@@ -8,9 +8,16 @@ create table if not exists public.shots (
   result     text check (result in ('success','fail','unclear')),   -- задел на будущее (винрейт)
   path_full  text not null,
   path_thumb text not null,
+  path_view  text,
+  focus_x    real not null default 50,
+  focus_y    real not null default 50,
   file_hash  text,
   created_at timestamptz not null default now()
 );
+alter table public.shots add column if not exists path_view text;
+alter table public.shots add column if not exists focus_x real not null default 50;
+alter table public.shots add column if not exists focus_y real not null default 50;
+
 create index if not exists shots_hash_idx    on public.shots(user_id, file_hash);
 create index if not exists shots_created_idx on public.shots(user_id, created_at desc);
 

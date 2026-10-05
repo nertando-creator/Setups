@@ -32,9 +32,9 @@ async function upload(path, blob) {
 }
 export async function createShot({ title, comment, factorIds, img }) {
   const base = `${await uid()}/${crypto.randomUUID()}`
-  const path_full = `${base}_full.webp`, path_thumb = `${base}_thumb.webp`
-  await Promise.all([upload(path_full, img.full), upload(path_thumb, img.thumb)])
-  const { data, error } = await supabase.from('shots').insert({ title, comment, path_full, path_thumb, file_hash: img.hash }).select().single()
+  const path_full = `${base}_full.webp`, path_view = `${base}_view.webp`, path_thumb = `${base}_thumb.webp`
+  await Promise.all([upload(path_full, img.full), upload(path_view, img.view), upload(path_thumb, img.thumb)])
+  const { data, error } = await supabase.from('shots').insert({ title, comment, path_full, path_view, path_thumb, file_hash: img.hash }).select().single()
   fail(error)
   if (factorIds.length) fail((await supabase.from('shot_factors').insert(factorIds.map((f) => ({ shot_id: data.id, factor_id: f })))).error)
   return { ...data, shot_factors: factorIds.map((f) => ({ factor_id: f })) }
@@ -46,7 +46,7 @@ export async function setShotFactor(shot_id, factor_id, on) {
   fail(error)
 }
 export async function deleteShot(s) {
-  await supabase.storage.from(BUCKET).remove([s.path_full, s.path_thumb])
+  await supabase.storage.from(BUCKET).remove([s.path_full, s.path_view, s.path_thumb].filter(Boolean))
   fail((await supabase.from('shots').delete().eq('id', s.id)).error)
 }
 
